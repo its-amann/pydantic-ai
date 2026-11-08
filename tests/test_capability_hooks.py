@@ -3773,6 +3773,37 @@ class TestModelRetryFromHooks:
             ]
         )
 
+    async def test_recovered_response_model_retry_keeps_it_when_a_limit_stops_the_run(self):
+        """A recovered response a hook rejects is billed on settle, so a limit it crosses keeps it as interrupted."""
+
+        def failing_model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            raise RuntimeError('model exploded')
+
+        @dataclass
+        class RecoverThenRejectCap(AbstractCapability[Any]):
+            async def on_model_request_error(
+                self, ctx: RunContext[Any], *, request_context: ModelRequestContext, error: Exception
+            ) -> ModelResponse:
+                return ModelResponse(parts=[TextPart('recovered')], usage=RequestUsage(input_tokens=5, output_tokens=5))
+
+            async def after_model_request(
+                self,
+                ctx: RunContext[Any],
+                *,
+                request_context: ModelRequestContext,
+                response: ModelResponse,
+            ) -> ModelResponse:
+                raise ModelRetry('Response was bad, please try again')
+
+        agent = Agent(FunctionModel(failing_model), capabilities=[RecoverThenRejectCap()])
+        with capture_run_messages() as messages:
+            with pytest.raises(UsageLimitExceeded, match='Exceeded the total_tokens_limit of 1'):
+                await agent.run('hello', usage_limits=UsageLimits(total_tokens_limit=1))
+
+        assert isinstance(messages[-1], ModelResponse)
+        assert messages[-1].parts == [TextPart('recovered')]
+        assert messages[-1].state == 'interrupted'
+
     async def test_after_model_request_model_retry_streaming(self):
         """after_model_request raises ModelRetry during streaming with tool calls — model is called again."""
         call_count = 0

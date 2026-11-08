@@ -3759,7 +3759,10 @@ class ModelRequestNode(AgentNode[DepsT, NodeRunEndT]):
         run a limit stops keeps it in its messages, and resuming from them doesn't request it again.
         """
         if response is not None:
-            self._append_response(ctx, response, record_usage=record_usage, described=described)
+            if record_usage:
+                self._record_response_usage(ctx, response, described=described)
+                accounted_responses = [*accounted_responses, response]
+            self._append_response(ctx, response, record_usage=False)
         try:
             self._enforce_usage_limits(ctx, accounted_responses)
         except exceptions.UsageLimitExceeded:
