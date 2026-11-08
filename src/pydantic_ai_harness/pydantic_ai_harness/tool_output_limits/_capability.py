@@ -738,6 +738,9 @@ def _with_handles(
     if isinstance(existing, list | tuple):
         items: list[object] = list(cast('list[object] | tuple[object, ...]', existing))
         return [*items, handles]
+    if _is_ui_event(existing):
+        # A single event or chunk is read by the adapters the same way as a one item list.
+        return [existing, handles]
 
     base: dict[str, object] = {}
     if is_mapping(existing):
@@ -746,6 +749,22 @@ def _with_handles(
         base['original_metadata'] = existing
     base.update(handles)
     return base
+
+
+def _is_ui_event(value: object) -> bool:
+    """Whether `value` is a single AG-UI event or Vercel AI data chunk the UI adapters pass through."""
+    try:
+        from ag_ui.core import BaseEvent
+    except ImportError:  # pragma: no cover
+        pass
+    else:
+        if isinstance(value, BaseEvent):
+            return True
+    try:
+        from pydantic_ai.ui.vercel_ai._utils import DATA_CHUNK_TYPES
+    except ImportError:  # pragma: no cover
+        return False
+    return isinstance(value, DATA_CHUNK_TYPES)
 
 
 def _build_spill_preview(handle: str, unit: _Unit, preview_chars: int, *, over_tokens: bool, read_hint: str) -> str:

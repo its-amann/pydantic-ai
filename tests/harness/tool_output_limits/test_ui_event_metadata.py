@@ -100,3 +100,35 @@ async def test_spilled_return_keeps_vercel_ai_chunks(tmp_path: Path) -> None:
     metadata: list[object] = part.metadata
     assert metadata[0] == chunk
     assert isinstance(metadata[-1], dict) and 'overflow_handle' in metadata[-1]
+
+
+@pytest.mark.skipif(not ag_ui_imports_successful(), reason='ag-ui-protocol not installed')
+async def test_spilled_return_keeps_a_single_ag_ui_event(tmp_path: Path) -> None:
+    event = CustomEvent(type=EventType.CUSTOM, name='cards', value={'n': 100})
+    run_input = RunAgentInput(
+        thread_id='t',
+        run_id='r',
+        messages=[UserMessage(id='u', role='user', content='hi')],
+        state={},
+        tools=[],
+        context=[],
+        forwarded_props={},
+    )
+    adapter = AGUIAdapter(agent=_agent(tmp_path, event), run_input=run_input)
+    events = [e async for e in adapter.run_stream()]
+
+    customs = [e for e in events if isinstance(e, CustomEvent)]
+    assert [(e.name, e.value) for e in customs] == [('cards', {'n': 100})]
+    assert list(tmp_path.rglob('*')), 'the return was not spilled, so this test proves nothing'
+
+
+@pytest.mark.skipif(not vercel_imports_successful(), reason='vercel ai dependencies not installed')
+async def test_spilled_return_keeps_a_single_vercel_ai_chunk(tmp_path: Path) -> None:
+    chunk = DataChunk(type='data-search-results', data={'count': 100})
+    result = await _agent(tmp_path, chunk).run('hi')
+
+    part = next(
+        p for m in result.all_messages() for p in m.parts if isinstance(p, ToolReturnPart) and p.tool_name == 'search'
+    )
+    assert list(iter_metadata_chunks(part)) == [chunk]
+    assert isinstance(part.metadata[-1], dict) and 'overflow_handle' in part.metadata[-1]
