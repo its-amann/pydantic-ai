@@ -513,7 +513,7 @@ class _JsonSchemaTestData:
         else:
             raise NotImplementedError(f'Unknown type: {type_}, please submit a PR to extend JsonSchemaTestData!')
 
-    def _resolve_ref(self, ref: str) -> dict[str, Any]:
+    def _resolve_ref(self, ref: str) -> dict[str, Any] | bool:
         """Look up a JSON Schema `$ref` in the schema's `$defs`, or as a local JSON pointer like `#/properties/from`."""
         name = ref.removeprefix('#/$defs/')
         if name not in self.defs and (target := resolve_json_pointer(self.schema, ref)) is not None:
@@ -536,6 +536,9 @@ class _JsonSchemaTestData:
         if required:
             if ref := member.get('$ref'):
                 member = self._resolve_ref(ref)
+                if isinstance(member, bool):
+                    # a boolean subschema has no structure to generate from
+                    return self._char()
             member = {**member, 'required': [*member.get('required', []), *required]}
         return self._gen_any(member)
 
